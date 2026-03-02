@@ -1,0 +1,77 @@
+spring:
+  application:
+    name: SSP
+
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/ssp?characterEncoding=UTF-8}
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        default_schema: public
+        jdbc:
+          charset: UTF-8
+
+  # Spring AI configuration
+  ai:
+    openai:
+      api-key: ${OPEN_AI_API_KEY}
+      chat:
+        options:
+          model: gpt-4o
+          temperature: 0.3
+    anthropic:
+      api-key: ${ANTHROPIC_API_KEY}
+      chat:
+        options:
+          model: claude-sonnet-4-20250514
+          temperature: 0.3
+    retry:
+      max-attempts: 3
+      backoff:
+        initial-interval: 1000
+        multiplier: 2
+
+  # File upload configuration (novels can be large)
+  servlet:
+    multipart:
+      enabled: true
+      max-file-size: 50MB
+      max-request-size: 50MB
+
+  # Ensure HTTP uses UTF-8 for all requests/responses
+  http:
+    encoding:
+      charset: UTF-8
+      enabled: true
+      force: true
+
+server:
+  port: 8080
+  servlet:
+    encoding:
+      charset: UTF-8
+      enabled: true
+      force: true
+
+# SSP application configuration
+ssp:
+  ai:
+    active-provider: openai
+    translation:
+      max-batch-size: 10
+      two-pass: true        # Pass 1: faithful draft. Pass 2: literary elevation. Mirrors professional translator workflow.
+    analysis:
+      enabled: true
+  async:
+    core-pool-size: 4
+    max-pool-size: 8
+    queue-capacity: 100
