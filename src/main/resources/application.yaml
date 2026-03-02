@@ -28,6 +28,9 @@ spring:
         options:
           model: gpt-4o
           temperature: 0.3
+      embedding:
+        options:
+          model: text-embedding-3-small  # 1536 dimensions, fast, cost-effective for RAG
     anthropic:
       api-key: ${ANTHROPIC_API_KEY}
       chat:
@@ -39,6 +42,12 @@ spring:
       backoff:
         initial-interval: 1000
         multiplier: 2
+    vectorstore:
+      pgvector:
+        initialize-schema: true        # auto-creates the vector_store table on startup
+        dimensions: 1536               # matches text-embedding-3-small
+        distance-type: COSINE_DISTANCE # best for semantic similarity
+        index-type: HNSW               # fast approximate nearest-neighbour search
 
   # File upload configuration (novels can be large)
   servlet:

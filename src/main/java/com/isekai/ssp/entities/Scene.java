@@ -2,6 +2,7 @@ package com.isekai.ssp.entities;
 
 import com.isekai.ssp.helpers.EmotionalTone;
 import com.isekai.ssp.helpers.NarrativePace;
+import com.isekai.ssp.helpers.NarrativeTimeType;
 import com.isekai.ssp.helpers.SceneType;
 import jakarta.persistence.*;
 import lombok.Getter;
@@ -48,7 +49,21 @@ public class Scene {
     @Enumerated(EnumType.STRING)
     private EmotionalTone tone;
 
-    private String qdrantVectorId;
+    /** Reference to the pgvector document for semantic similarity search */
+    private String vectorDocId;
+
+    /**
+     * Temporal classification of this scene.
+     * FLASHBACK scenes trigger retrieval of historical character states.
+     */
+    @Enumerated(EnumType.STRING)
+    private NarrativeTimeType narrativeTimeType;
+
+    /**
+     * For FLASHBACK scenes: the chapter number this scene is set in.
+     * Enables retrieval of character states at that earlier point in the story.
+     */
+    private Integer flashbackToChapter;
 
     private LocalDateTime createdAt;
 }

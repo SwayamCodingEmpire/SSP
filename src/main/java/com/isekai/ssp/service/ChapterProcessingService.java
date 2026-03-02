@@ -7,6 +7,8 @@ import com.isekai.ssp.helpers.ChapterStatus;
 import com.isekai.ssp.helpers.TranslationStatus;
 import com.isekai.ssp.repository.ChapterRepository;
 import com.isekai.ssp.repository.ProjectRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -20,9 +22,12 @@ import java.time.LocalDateTime;
 @Service
 public class ChapterProcessingService {
 
+    private static final Logger log = LoggerFactory.getLogger(ChapterProcessingService.class);
+
     private final ProjectRepository projectRepository;
     private final ChapterRepository chapterRepository;
     private final ChapterAnalysisOrchestrator chapterAnalysisOrchestrator;
+
 
     @Value("${ssp.ai.analysis.enabled:false}")
     private boolean analysisEnabled;
@@ -77,6 +82,7 @@ public class ChapterProcessingService {
                 ? chapter.getOriginalText().substring(0, Math.min(200, chapter.getOriginalText().length()))
                 : null;
 
+        log.info(chapter.getTranslatedText());
         return new ChapterProcessingResponse(
                 chapter.getId(),
                 chapter.getChapterNumber(),

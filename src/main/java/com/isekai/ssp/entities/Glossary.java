@@ -40,6 +40,9 @@ public class Glossary {
 
     private Boolean enforceConsistency; // If true, always use this translation
 
+    /** Reference to the pgvector document for semantic similarity search */
+    private String vectorDocId;
+
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }

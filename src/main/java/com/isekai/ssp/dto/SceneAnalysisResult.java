@@ -13,6 +13,17 @@ public record SceneAnalysisResult(
             String pace,
             String tone,
             boolean continuedFromPrevious,
-            boolean continuesInNext
+            boolean continuesInNext,
+            /**
+             * Temporal classification: PRESENT, FLASHBACK, or FLASH_FORWARD.
+             * Most scenes are PRESENT. Use FLASHBACK when the narrative explicitly
+             * moves to events that happened before the story's current timeline.
+             */
+            String narrativeTimeType,
+            /**
+             * For FLASHBACK scenes only: the approximate chapter number this scene is set in.
+             * Leave null for PRESENT and FLASH_FORWARD scenes.
+             */
+            Integer flashbackToChapter
     ) {}
 }

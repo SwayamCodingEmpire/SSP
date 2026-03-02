@@ -34,7 +34,16 @@ public class Character {
     @Enumerated(EnumType.STRING)
     private CharacterRole role;         // PROTAGONIST, ANTAGONIST, SUPPORTING, MINOR
 
-    private String qdrantVectorId;      // Reference to personality vector in QdrantDB
+    /** Reference to the pgvector document for semantic similarity search */
+    private String vectorDocId;
+
+    /**
+     * A single representative line of dialogue that captures this character's voice.
+     * Injected as a few-shot example in translation prompts to anchor their register.
+     * e.g. "You think you can stop me? I've buried better men than you."
+     */
+    @Column(columnDefinition = "TEXT")
+    private String voiceExample;
 
     private Integer firstAppearanceChapter;
 

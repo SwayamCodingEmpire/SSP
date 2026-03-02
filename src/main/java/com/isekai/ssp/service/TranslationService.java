@@ -64,7 +64,6 @@ public class TranslationService {
     // Public API
     // -------------------------------------------------------------------------
 
-    @Async("aiTaskExecutor")
     public CompletableFuture<Void> translateChapterAsync(Long chapterId, String providerOverride) {
         try {
             Chapter chapter = chapterRepository.findById(chapterId)
@@ -232,6 +231,21 @@ public class TranslationService {
                   crude as they are — voice is character.
                 - Read your output aloud mentally. If it doesn't breathe, rewrite it.
 
+                ## Interior monologue and ambiguous states — CRITICAL
+                Translate the EXPERIENCE, not the words. When a character's inner state is ambiguous,
+                contradictory, or self-referential — do not render it mechanically.
+                The character's mind is the canvas. Capture its texture.
+
+                WRONG approach (mechanical):
+                  "I was intoxicated. With what? I was intoxicated."
+                RIGHT approach (experiential):
+                  "I was intoxicated. To what, I wonder. But regardless — I was undeniably intoxicated."
+
+                The right translation lets the reader inhabit the confusion, the searching, the realization.
+                Interior monologue should feel like thought in motion — recursive, reaching, unresolved.
+                When the source text circles back on itself, let the translation circle back too, but with
+                rhythm, not mere repetition.
+
                 %s
                 %s
                 ## Enforced glossary (never deviate from these terms)
@@ -239,13 +253,14 @@ public class TranslationService {
 
                 ## Characters
                 %s
-
+                %s
                 Respond ONLY with valid JSON matching the requested format.
                 """.formatted(
                 ctx.sourceLanguage(), ctx.targetLanguage(),
                 buildSceneGuidance(ctx.sceneContext()),
                 buildStyleSection(ctx.styleGuide()),
-                ctx.glossaryBlock(), ctx.characterBlock());
+                ctx.glossaryBlock(), ctx.characterBlock(),
+                buildStyleExamplesSection(ctx.styleExamplesBlock()));
     }
 
     private String buildSceneGuidance(String sceneContext) {
@@ -270,6 +285,18 @@ public class TranslationService {
                 - HUMOROUS          → Light touch. Timing is everything — rhythm is the punchline.
                 - SERIOUS           → Weight and economy. Every word earns its place.
                 """.formatted(sceneContext);
+    }
+
+    private String buildStyleExamplesSection(String styleExamplesBlock) {
+        if (styleExamplesBlock == null || styleExamplesBlock.isBlank()) return "";
+        return """
+                ## Approved translation examples for this scene type
+                Study these approved translations to understand the target prose style.
+                They show exactly how literary elevation should look for this project.
+
+                %s
+
+                """.formatted(styleExamplesBlock);
     }
 
     private String buildStyleSection(String styleGuide) {
