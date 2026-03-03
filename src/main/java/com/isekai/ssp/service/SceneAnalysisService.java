@@ -7,10 +7,11 @@ import com.isekai.ssp.helpers.EmotionalTone;
 import com.isekai.ssp.helpers.NarrativePace;
 import com.isekai.ssp.helpers.NarrativeTimeType;
 import com.isekai.ssp.helpers.SceneType;
+import com.isekai.ssp.llm.LlmProvider;
+import com.isekai.ssp.llm.LlmProviderRegistry;
 import com.isekai.ssp.repository.SceneRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.converter.BeanOutputConverter;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -24,17 +25,17 @@ public class SceneAnalysisService {
 
     private static final Logger logger = LoggerFactory.getLogger(SceneAnalysisService.class);
 
-    private final ChatClient chatClient;
+    private final LlmProviderRegistry providerRegistry;
     private final SceneRepository sceneRepository;
     private final ContextBuilderService contextBuilder;
     private final NarrativeEmbeddingService embeddingService;
 
     public SceneAnalysisService(
-            ChatClient chatClient,
+            LlmProviderRegistry providerRegistry,
             SceneRepository sceneRepository,
             ContextBuilderService contextBuilder,
             NarrativeEmbeddingService embeddingService) {
-        this.chatClient = chatClient;
+        this.providerRegistry = providerRegistry;
         this.sceneRepository = sceneRepository;
         this.contextBuilder = contextBuilder;
         this.embeddingService = embeddingService;
@@ -48,11 +49,11 @@ public class SceneAnalysisService {
                 new BeanOutputConverter<>(SceneAnalysisResult.class);
 
         try {
-            String response = chatClient.prompt()
-                    .system(SYSTEM_PROMPT)
-                    .user(context + "\n\n" + converter.getFormat())
-                    .call()
-                    .content();
+            LlmProvider provider = providerRegistry.resolve(null);
+            String response = provider.generate(
+                    SYSTEM_PROMPT,
+                    context + "\n\n" + converter.getFormat()
+            );
 
             SceneAnalysisResult result = converter.convert(response);
 

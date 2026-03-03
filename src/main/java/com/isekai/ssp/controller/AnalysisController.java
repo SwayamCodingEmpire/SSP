@@ -49,14 +49,9 @@ public class AnalysisController {
         List<Character> characters = characterRepository.findByProjectId(chapter.getProject().getId());
         List<Scene> scenes = sceneRepository.findByChapterId(chapterId);
 
-        String status;
-        if (!characters.isEmpty() && !scenes.isEmpty()) {
-            status = "ANALYZED";
-        } else if (!characters.isEmpty() || !scenes.isEmpty()) {
-            status = "ANALYZING";
-        } else {
-            status = "PENDING";
-        }
+        String status = chapter.getAnalysisStatus() != null
+                ? chapter.getAnalysisStatus().name()
+                : "PENDING";
 
         List<String> characterNames = characters.stream().map(Character::getName).toList();
 

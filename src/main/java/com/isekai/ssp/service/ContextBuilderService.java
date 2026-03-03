@@ -68,7 +68,10 @@ public class ContextBuilderService {
         if (!existing.isEmpty()) {
             sb.append("## Previously known characters in this project:\n");
             for (Character c : existing) {
-                sb.append("- %s (%s): %s\n".formatted(c.getName(), c.getRole(), c.getDescription()));
+                String aliasNote = (c.getAliases() != null && !c.getAliases().isEmpty())
+                        ? " [also known as: " + String.join(", ", c.getAliases()) + "]"
+                        : "";
+                sb.append("- %s%s (%s): %s\n".formatted(c.getName(), aliasNote, c.getRole(), c.getDescription()));
             }
             sb.append("\n");
         }

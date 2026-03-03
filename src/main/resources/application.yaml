@@ -73,6 +73,8 @@ server:
 
 # SSP application configuration
 ssp:
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:4200}
   ai:
     active-provider: openai
     translation:

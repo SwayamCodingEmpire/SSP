@@ -8,5 +8,7 @@ public record ChapterProcessingResponse(
         String title,
         ChapterStatus status,
         String translationStatus,
-        String originalTextPreview
+        String analysisStatus,
+        String originalTextPreview,
+        String fullOriginalText
 ) {}

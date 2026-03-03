@@ -5,6 +5,7 @@ import com.isekai.ssp.entities.Character;
 import com.isekai.ssp.repository.CharacterRepository;
 import com.isekai.ssp.repository.CharacterStateRepository;
 import com.isekai.ssp.repository.GlossaryRepository;
+import com.isekai.ssp.repository.RelationshipStateRepository;
 import com.isekai.ssp.repository.SceneRepository;
 import com.isekai.ssp.repository.StyleExampleRepository;
 import org.slf4j.Logger;
@@ -39,6 +40,7 @@ public class NarrativeEmbeddingService {
     private final VectorStore vectorStore;
     private final CharacterRepository characterRepository;
     private final CharacterStateRepository characterStateRepository;
+    private final RelationshipStateRepository relationshipStateRepository;
     private final SceneRepository sceneRepository;
     private final GlossaryRepository glossaryRepository;
     private final StyleExampleRepository styleExampleRepository;
@@ -47,12 +49,14 @@ public class NarrativeEmbeddingService {
             VectorStore vectorStore,
             CharacterRepository characterRepository,
             CharacterStateRepository characterStateRepository,
+            RelationshipStateRepository relationshipStateRepository,
             SceneRepository sceneRepository,
             GlossaryRepository glossaryRepository,
             StyleExampleRepository styleExampleRepository) {
         this.vectorStore = vectorStore;
         this.characterRepository = characterRepository;
         this.characterStateRepository = characterStateRepository;
+        this.relationshipStateRepository = relationshipStateRepository;
         this.sceneRepository = sceneRepository;
         this.glossaryRepository = glossaryRepository;
         this.styleExampleRepository = styleExampleRepository;
@@ -132,6 +136,24 @@ public class NarrativeEmbeddingService {
         example.setVectorDocId(docId);
         styleExampleRepository.save(example);
         logger.debug("Embedded style example {} (docId={})", example.getId(), docId);
+    }
+
+    @Async("aiTaskExecutor")
+    public void embedRelationshipState(RelationshipState state) {
+        String text = buildRelationshipStateText(state);
+        CharacterRelationship rel = state.getRelationship();
+        // Store chapter_number as Integer for correct numeric filtering
+        Map<String, Object> metadata = new java.util.HashMap<>();
+        metadata.put("type", "relationship_state");
+        metadata.put("project_id", rel.getCharacter1().getProject().getId().toString());
+        metadata.put("relationship_id", rel.getId().toString());
+        metadata.put("chapter_number", state.getChapterNumber());
+        String docId = upsert(state.getVectorDocId(), text, metadata);
+        state.setVectorDocId(docId);
+        relationshipStateRepository.save(state);
+        logger.debug("Embedded relationship state for {}<->{} at chapter {} (docId={})",
+                rel.getCharacter1().getName(), rel.getCharacter2().getName(),
+                state.getChapterNumber(), docId);
     }
 
     // -------------------------------------------------------------------------
@@ -220,6 +242,8 @@ public class NarrativeEmbeddingService {
     private String buildCharacterText(Character c) {
         var sb = new StringBuilder();
         sb.append("Character: ").append(c.getName());
+        if (c.getAliases() != null && !c.getAliases().isEmpty())
+            sb.append(" (also known as: ").append(String.join(", ", c.getAliases())).append(")");
         if (c.getRole() != null) sb.append(" | Role: ").append(c.getRole().name());
         if (c.getDescription() != null) sb.append(" | Description: ").append(c.getDescription());
         if (c.getPersonalityTraits() != null) sb.append(" | Traits: ").append(c.getPersonalityTraits());
@@ -231,11 +255,32 @@ public class NarrativeEmbeddingService {
         var sb = new StringBuilder();
         sb.append("Character: ").append(s.getCharacter().getName());
         sb.append(" at chapter ").append(s.getChapterNumber());
-        if (s.getEmotionalState() != null) sb.append(" | Emotional: ").append(s.getEmotionalState());
-        if (s.getPhysicalState() != null)  sb.append(" | Physical: ").append(s.getPhysicalState());
-        if (s.getCurrentGoal() != null)    sb.append(" | Goal: ").append(s.getCurrentGoal());
-        if (s.getArcStage() != null)       sb.append(" | Arc: ").append(s.getArcStage());
-        if (s.getNarrativeNotes() != null) sb.append(" | Notes: ").append(s.getNarrativeNotes());
+        if (s.getEmotionalState() != null)          sb.append(" | Emotional: ").append(s.getEmotionalState());
+        if (s.getPhysicalState() != null)           sb.append(" | Physical: ").append(s.getPhysicalState());
+        if (s.getCurrentGoal() != null)             sb.append(" | Goal: ").append(s.getCurrentGoal());
+        if (s.getArcStage() != null)                sb.append(" | Arc: ").append(s.getArcStage());
+        if (s.getAffiliation() != null)             sb.append(" | Affiliation: ").append(s.getAffiliation());
+        if (s.getLoyalty() != null)                 sb.append(" | Loyalty: ").append(s.getLoyalty());
+        if (s.getNarrativeNotes() != null)          sb.append(" | Notes: ").append(s.getNarrativeNotes());
+        if (s.getDialogueEmotionType() != null) {
+            sb.append(" | Dialogue emotion: ").append(s.getDialogueEmotionType());
+            if (s.getDialogueEmotionIntensity() != null)
+                sb.append(" (").append(s.getDialogueEmotionIntensity()).append(")");
+        }
+        if (s.getDialogueSummary() != null)         sb.append(" | Voice: ").append(s.getDialogueSummary());
+        return sb.toString();
+    }
+
+    private String buildRelationshipStateText(RelationshipState rs) {
+        CharacterRelationship rel = rs.getRelationship();
+        var sb = new StringBuilder();
+        sb.append("Relationship: ").append(rel.getCharacter1().getName())
+          .append(" <-> ").append(rel.getCharacter2().getName());
+        sb.append(" at chapter ").append(rs.getChapterNumber());
+        sb.append(" | Type: ").append(rs.getType().name());
+        if (rs.getAffinity() != null)    sb.append(" | Affinity: ").append(rs.getAffinity());
+        if (rs.getDescription() != null) sb.append(" | Description: ").append(rs.getDescription());
+        if (rs.getDynamicsNote() != null) sb.append(" | Dynamics: ").append(rs.getDynamicsNote());
         return sb.toString();
     }
 

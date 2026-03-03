@@ -1,5 +1,6 @@
 package com.isekai.ssp.entities;
 
+import com.isekai.ssp.helpers.AnalysisStatus;
 import com.isekai.ssp.helpers.ChapterStatus;
 import com.isekai.ssp.helpers.TranslationStatus;
 import jakarta.persistence.*;
@@ -32,7 +33,13 @@ public class Chapter {
     private String originalText;          // Full chapter text in source language
 
     @Column(columnDefinition = "TEXT")
-    private String translatedText;        // Full translated text (or rejoined from segments)
+    private String translatedText;        // AI-generated translated text (or rejoined from segments)
+
+    @Column(columnDefinition = "TEXT")
+    private String userEditedText;        // User's final version after review/editing
+
+    private Boolean userAccepted;         // true = accepted AI output as-is, false = user made edits
+    private LocalDateTime reviewedAt;     // when the user saved their review
 
     @Column(columnDefinition = "TEXT")
     private String summary;               // AI-generated summary
@@ -42,6 +49,9 @@ public class Chapter {
 
     @Enumerated(EnumType.STRING)
     private TranslationStatus translationStatus;
+
+    @Enumerated(EnumType.STRING)
+    private AnalysisStatus analysisStatus;
 
     @Column(columnDefinition = "TEXT")
     private String contextNotes;          // AI translation context notes

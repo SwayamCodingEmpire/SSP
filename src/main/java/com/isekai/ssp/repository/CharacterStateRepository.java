@@ -37,4 +37,6 @@ public interface CharacterStateRepository extends JpaRepository<CharacterState, 
     List<CharacterState> findProjectStatesAtOrBefore(Long projectId, int chapterNumber);
 
     List<CharacterState> findByChapterId(Long chapterId);
+
+    Optional<CharacterState> findByCharacterIdAndChapterId(Long characterId, Long chapterId);
 }

@@ -3,6 +3,7 @@ package com.isekai.ssp.service;
 import com.isekai.ssp.dto.ChapterProcessingResponse;
 import com.isekai.ssp.entities.Chapter;
 import com.isekai.ssp.entities.Project;
+import com.isekai.ssp.helpers.AnalysisStatus;
 import com.isekai.ssp.helpers.ChapterStatus;
 import com.isekai.ssp.helpers.TranslationStatus;
 import com.isekai.ssp.repository.ChapterRepository;
@@ -58,6 +59,7 @@ public class ChapterProcessingService {
         chapter.setOriginalText(chapterText);
         chapter.setStatus(ChapterStatus.PARSED);
         chapter.setTranslationStatus(TranslationStatus.PENDING);
+        chapter.setAnalysisStatus(AnalysisStatus.PENDING);
         chapter.setChunked(false);
         chapter.setCreatedAt(LocalDateTime.now());
 
@@ -89,7 +91,9 @@ public class ChapterProcessingService {
                 chapter.getTitle(),
                 chapter.getStatus(),
                 chapter.getTranslationStatus() != null ? chapter.getTranslationStatus().name() : null,
-                preview
+                chapter.getAnalysisStatus() != null ? chapter.getAnalysisStatus().name() : null,
+                preview,
+                chapter.getOriginalText()
         );
     }
 }

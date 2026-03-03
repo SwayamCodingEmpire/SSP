@@ -3,14 +3,20 @@ package com.isekai.ssp.service;
 import com.isekai.ssp.dto.SpeakerDetectionResult;
 import com.isekai.ssp.entities.Chapter;
 import com.isekai.ssp.entities.Character;
+import com.isekai.ssp.entities.CharacterState;
+import com.isekai.ssp.llm.LlmProvider;
+import com.isekai.ssp.llm.LlmProviderRegistry;
 import com.isekai.ssp.repository.CharacterRepository;
+import com.isekai.ssp.repository.CharacterStateRepository;
 import com.isekai.ssp.repository.ChapterRepository;
-import org.springframework.ai.chat.client.ChatClient;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.ai.converter.BeanOutputConverter;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Optional;
 
 /**
  * Uses AI to analyze dialogue patterns at the chapter level.
@@ -19,20 +25,27 @@ import java.util.List;
 @Service
 public class SpeakerDetectionService {
 
-    private final ChatClient chatClient;
+    private final LlmProviderRegistry providerRegistry;
     private final CharacterRepository characterRepository;
+    private final CharacterStateRepository characterStateRepository;
     private final ChapterRepository chapterRepository;
     private final ContextBuilderService contextBuilder;
+    private final NarrativeEmbeddingService embeddingService;
+    private final Logger logger = LoggerFactory.getLogger(SpeakerDetectionService.class);
 
     public SpeakerDetectionService(
-            ChatClient chatClient,
+            LlmProviderRegistry providerRegistry,
             CharacterRepository characterRepository,
+            CharacterStateRepository characterStateRepository,
             ChapterRepository chapterRepository,
-            ContextBuilderService contextBuilder) {
-        this.chatClient = chatClient;
+            ContextBuilderService contextBuilder,
+            NarrativeEmbeddingService embeddingService) {
+        this.providerRegistry = providerRegistry;
         this.characterRepository = characterRepository;
+        this.characterStateRepository = characterStateRepository;
         this.chapterRepository = chapterRepository;
         this.contextBuilder = contextBuilder;
+        this.embeddingService = embeddingService;
     }
 
     @Transactional
@@ -50,17 +63,58 @@ public class SpeakerDetectionService {
                 new BeanOutputConverter<>(SpeakerDetectionResult.class);
 
         try {
-            String response = chatClient.prompt()
-                    .system(SYSTEM_PROMPT)
-                    .user(context + "\n\n" + converter.getFormat())
-                    .call()
-                    .content();
+            LlmProvider provider = providerRegistry.resolve(null);
+            String response = provider.generate(
+                    SYSTEM_PROMPT,
+                    context + "\n\n" + converter.getFormat()
+            );
 
-            return converter.convert(response);
+            SpeakerDetectionResult result = converter.convert(response);
+            persistDialogueData(chapter, result);
+            return result;
 
         } catch (Exception e) {
             throw new AiServiceException("primary", "speaker-detection",
                     "Failed to detect speakers for chapter " + chapter.getId(), e);
+        }
+    }
+
+    /**
+     * Writes dialogue emotion + summary back into each character's CharacterState for this chapter.
+     * Re-embeds the state so pgvector gets the richer temporal voice profile.
+     */
+    private void persistDialogueData(Chapter chapter, SpeakerDetectionResult result) {
+        for (SpeakerDetectionResult.CharacterDialogue dialogue : result.characterDialogues()) {
+            Optional<Character> characterOpt = characterRepository
+                    .findByProjectIdAndName(chapter.getProject().getId(), dialogue.characterName());
+
+            if (characterOpt.isEmpty()) {
+                logger.warn("Speaker detection: character '{}' not found in project — skipping",
+                        dialogue.characterName());
+                continue;
+            }
+
+            Optional<CharacterState> stateOpt = characterStateRepository
+                    .findByCharacterIdAndChapterId(characterOpt.get().getId(), chapter.getId());
+
+            if (stateOpt.isEmpty()) {
+                logger.warn("Speaker detection: no CharacterState found for '{}' at chapter {} — skipping",
+                        dialogue.characterName(), chapter.getChapterNumber());
+                continue;
+            }
+
+            CharacterState state = stateOpt.get();
+            state.setDialogueEmotionType(dialogue.emotionType());
+            state.setDialogueEmotionIntensity(dialogue.emotionIntensity());
+            state.setDialogueSummary(dialogue.dialogueSummary());
+            characterStateRepository.save(state);
+
+            // Re-embed so pgvector gets the richer temporal voice profile
+            embeddingService.embedCharacterState(state);
+
+            logger.debug("Persisted dialogue data for '{}' at chapter {} (emotion={}, intensity={})",
+                    dialogue.characterName(), chapter.getChapterNumber(),
+                    dialogue.emotionType(), dialogue.emotionIntensity());
         }
     }
 

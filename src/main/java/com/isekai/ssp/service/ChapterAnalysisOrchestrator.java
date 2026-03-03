@@ -2,6 +2,7 @@ package com.isekai.ssp.service;
 
 import com.isekai.ssp.entities.Chapter;
 import com.isekai.ssp.entities.Character;
+import com.isekai.ssp.helpers.AnalysisStatus;
 import com.isekai.ssp.repository.ChapterRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -47,6 +48,8 @@ public class ChapterAnalysisOrchestrator {
                 .orElseThrow(() -> new IllegalArgumentException("Chapter not found: " + chapterId));
 
         log.info("Starting AI analysis for chapter {} (id={})", chapter.getChapterNumber(), chapterId);
+        chapter.setAnalysisStatus(AnalysisStatus.ANALYZING);
+        chapterRepository.save(chapter);
 
         try {
             // Step 1: Extract characters (must run first)
@@ -64,7 +67,7 @@ public class ChapterAnalysisOrchestrator {
             var scenes = sceneAnalysisService.analyzeScenes(chapter);
             log.info("Detected {} scenes", scenes.size());
 
-            // Update chapter timestamp
+            chapter.setAnalysisStatus(AnalysisStatus.ANALYZED);
             chapter.setUpdatedAt(LocalDateTime.now());
             chapterRepository.save(chapter);
 
@@ -72,6 +75,9 @@ public class ChapterAnalysisOrchestrator {
 
         } catch (AiServiceException e) {
             log.error("AI analysis failed for chapter {}: {}", chapterId, e.getMessage(), e);
+            chapter.setAnalysisStatus(AnalysisStatus.FAILED);
+            chapter.setUpdatedAt(LocalDateTime.now());
+            chapterRepository.save(chapter);
             throw e;
         }
 

@@ -60,6 +60,47 @@ public class CharacterState {
     private String narrativeNotes;
 
     /**
+     * Dominant emotion detected from dialogue in this chapter.
+     * Values: NEUTRAL, HAPPY, SAD, ANGRY, FEARFUL, URGENT, EXCITED, CONTEMPLATIVE
+     * Populated by SpeakerDetectionService after CharacterExtraction.
+     */
+    private String dialogueEmotionType;
+
+    /**
+     * Intensity of the dominant dialogue emotion (0.0 = barely perceptible, 1.0 = overwhelming).
+     * Populated by SpeakerDetectionService.
+     */
+    private Double dialogueEmotionIntensity;
+
+    /**
+     * How this character speaks in this specific chapter — register, patterns, verbal habits.
+     * e.g. "speaks in short clipped sentences, deflects personal questions, formal with strangers"
+     * Key for flashback voice fidelity: lets the translator use the character's voice AT this chapter,
+     * not their current voice.
+     * Populated by SpeakerDetectionService.
+     */
+    @Column(columnDefinition = "TEXT")
+    private String dialogueSummary;
+
+    /**
+     * Faction, guild, organization, or group the character belongs to at this chapter.
+     * Null when not applicable (solo characters, undefined allegiance).
+     * e.g. "Fairy Tail Guild", "Magic Council", "Shadow Monarch's Army"
+     * Can change across chapters (defection, capture, promotion).
+     */
+    @Column(columnDefinition = "TEXT")
+    private String affiliation;
+
+    /**
+     * Who or what the character is loyal to at this chapter.
+     * Tracks hidden loyalties and shifts — often differs from affiliation.
+     * e.g. "Fiercely loyal to the King", "Secretly working for the enemy faction",
+     *      "Loyal only to themselves", "Torn between family and duty"
+     */
+    @Column(columnDefinition = "TEXT")
+    private String loyalty;
+
+    /**
      * Flexible JSONB bag for additional attributes: knowledge state, relationships at this point,
      * key events that just occurred, items carried, etc.
      * Stored as JSONB for efficient partial querying.
