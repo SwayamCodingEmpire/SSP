@@ -36,7 +36,34 @@ public record CharacterExtractionResult(
              * e.g. "Fiercely loyal to the King", "Secretly working for the enemy faction".
              * Null when not determined.
              */
-            String loyalty
+            String loyalty,
+            /**
+             * All distinct personalities/alter egos observed for this character in this chapter.
+             * Single-personality characters: one entry with isPrimary=true.
+             * Multi-personality characters: list each observed personality as a separate entry.
+             */
+            List<ExtractedPersonality> personalities,
+            /**
+             * The name of the personality that was dominant/active in this chapter.
+             * Must match one of the names in the personalities list.
+             * Null if only the primary personality appeared.
+             */
+            String activePersonalityName
+    ) {}
+
+    public record ExtractedPersonality(
+            /** Name of this personality/alter ego: "Hyde", "Yami Yugi", "Gollum" */
+            String name,
+            /** How this personality presents — behavioral markers, physical signs */
+            String description,
+            /** Comma-separated traits: "violent, cunning, fearless" */
+            String personalityTraits,
+            /** One representative dialogue line capturing this personality's unique voice */
+            String voiceExample,
+            /** What triggers/activates this personality. Null for the primary personality. */
+            String triggerCondition,
+            /** True for the character's default/base personality */
+            boolean isPrimary
     ) {}
 
     public record ExtractedRelationship(

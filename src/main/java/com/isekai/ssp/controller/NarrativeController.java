@@ -1,29 +1,33 @@
 package com.isekai.ssp.controller;
 
 import com.isekai.ssp.dto.CharacterRelationshipResponse;
-import com.isekai.ssp.dto.CharacterResponse;import com.isekai.ssp.dto.CharacterStateResponse;
+import com.isekai.ssp.dto.CharacterResponse;
+import com.isekai.ssp.dto.CharacterStateResponse;
 import com.isekai.ssp.dto.ChapterProcessingResponse;
+import com.isekai.ssp.dto.PersonalityResponse;
 import com.isekai.ssp.dto.RelationshipStateResponse;
 import com.isekai.ssp.dto.SceneResponse;
-import com.isekai.ssp.entities.Chapter;
+import com.isekai.ssp.entities.*;
 import com.isekai.ssp.entities.Character;
-import com.isekai.ssp.entities.CharacterRelationship;
-import com.isekai.ssp.entities.CharacterState;
-import com.isekai.ssp.entities.RelationshipState;
-import com.isekai.ssp.entities.Scene;
+import com.isekai.ssp.repository.CharacterPersonalityRepository;
 import com.isekai.ssp.repository.CharacterRelationshipRepository;
 import com.isekai.ssp.repository.CharacterRepository;
 import com.isekai.ssp.repository.CharacterStateRepository;
 import com.isekai.ssp.repository.ChapterRepository;
+import com.isekai.ssp.repository.ContentSectionRepository;
+import com.isekai.ssp.repository.PoeticFormRepository;
 import com.isekai.ssp.repository.ProjectRepository;
 import com.isekai.ssp.repository.RelationshipStateRepository;
 import com.isekai.ssp.repository.SceneRepository;
+import com.isekai.ssp.repository.ScriptElementRepository;
+import com.isekai.ssp.repository.ThematicElementRepository;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * Read-only narrative data endpoints, scoped to a project.
@@ -40,26 +44,41 @@ public class NarrativeController {
     private final ProjectRepository projectRepository;
     private final ChapterRepository chapterRepository;
     private final CharacterRepository characterRepository;
+    private final CharacterPersonalityRepository personalityRepository;
     private final CharacterStateRepository characterStateRepository;
     private final CharacterRelationshipRepository relationshipRepository;
     private final RelationshipStateRepository relationshipStateRepository;
     private final SceneRepository sceneRepository;
+    private final ContentSectionRepository contentSectionRepository;
+    private final PoeticFormRepository poeticFormRepository;
+    private final ScriptElementRepository scriptElementRepository;
+    private final ThematicElementRepository thematicElementRepository;
 
     public NarrativeController(
             ProjectRepository projectRepository,
             ChapterRepository chapterRepository,
             CharacterRepository characterRepository,
+            CharacterPersonalityRepository personalityRepository,
             CharacterStateRepository characterStateRepository,
             CharacterRelationshipRepository relationshipRepository,
             RelationshipStateRepository relationshipStateRepository,
-            SceneRepository sceneRepository) {
+            SceneRepository sceneRepository,
+            ContentSectionRepository contentSectionRepository,
+            PoeticFormRepository poeticFormRepository,
+            ScriptElementRepository scriptElementRepository,
+            ThematicElementRepository thematicElementRepository) {
         this.projectRepository = projectRepository;
         this.chapterRepository = chapterRepository;
         this.characterRepository = characterRepository;
+        this.personalityRepository = personalityRepository;
         this.characterStateRepository = characterStateRepository;
         this.relationshipRepository = relationshipRepository;
         this.relationshipStateRepository = relationshipStateRepository;
         this.sceneRepository = sceneRepository;
+        this.contentSectionRepository = contentSectionRepository;
+        this.poeticFormRepository = poeticFormRepository;
+        this.scriptElementRepository = scriptElementRepository;
+        this.thematicElementRepository = thematicElementRepository;
     }
 
     // -------------------------------------------------------------------------
@@ -156,10 +175,121 @@ public class NarrativeController {
     }
 
     // -------------------------------------------------------------------------
+    // Content Sections (academic/non-fiction/periodical)
+    // -------------------------------------------------------------------------
+
+    @GetMapping(value = "/sections", produces = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<List<Map<String, Object>>> getSections(@PathVariable Long projectId) {
+        assertProjectExists(projectId);
+        List<Map<String, Object>> body = contentSectionRepository.findByProjectId(projectId).stream()
+                .map(s -> {
+                    Map<String, Object> map = new java.util.LinkedHashMap<>();
+                    map.put("id", s.getId());
+                    map.put("chapterId", s.getChapter().getId());
+                    map.put("type", s.getType() != null ? s.getType().name() : null);
+                    map.put("title", s.getTitle());
+                    map.put("summary", s.getSummary());
+                    map.put("sequenceNumber", s.getSequenceNumber());
+                    map.put("keyConcepts", s.getKeyConceptsJson());
+                    map.put("createdAt", s.getCreatedAt());
+                    return map;
+                })
+                .toList();
+        return ResponseEntity.ok(body);
+    }
+
+    // -------------------------------------------------------------------------
+    // Poetic Forms (poetry/song lyrics)
+    // -------------------------------------------------------------------------
+
+    @GetMapping(value = "/poetic-forms", produces = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<List<Map<String, Object>>> getPoeticForms(@PathVariable Long projectId) {
+        assertProjectExists(projectId);
+        List<Map<String, Object>> body = poeticFormRepository.findByProjectId(projectId).stream()
+                .map(f -> {
+                    Map<String, Object> map = new java.util.LinkedHashMap<>();
+                    map.put("id", f.getId());
+                    map.put("chapterId", f.getChapter().getId());
+                    map.put("form", f.getForm() != null ? f.getForm().name() : null);
+                    map.put("meterPattern", f.getMeterPattern());
+                    map.put("rhymeScheme", f.getRhymeScheme());
+                    map.put("stanzaCount", f.getStanzaCount());
+                    map.put("linesPerStanza", f.getLinesPerStanza());
+                    map.put("soundDevices", f.getSoundDevicesJson());
+                    map.put("notes", f.getNotes());
+                    map.put("createdAt", f.getCreatedAt());
+                    return map;
+                })
+                .toList();
+        return ResponseEntity.ok(body);
+    }
+
+    // -------------------------------------------------------------------------
+    // Script Elements (TV/movie scripts)
+    // -------------------------------------------------------------------------
+
+    @GetMapping(value = "/script-elements", produces = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<List<Map<String, Object>>> getScriptElements(@PathVariable Long projectId) {
+        assertProjectExists(projectId);
+        List<Map<String, Object>> body = scriptElementRepository.findByProjectId(projectId).stream()
+                .map(e -> {
+                    Map<String, Object> map = new java.util.LinkedHashMap<>();
+                    map.put("id", e.getId());
+                    map.put("chapterId", e.getChapter().getId());
+                    map.put("type", e.getType() != null ? e.getType().name() : null);
+                    map.put("content", e.getContent());
+                    map.put("characterName", e.getCharacterName());
+                    map.put("sequenceNumber", e.getSequenceNumber());
+                    map.put("parenthetical", e.getParenthetical());
+                    map.put("notes", e.getNotes());
+                    map.put("createdAt", e.getCreatedAt());
+                    return map;
+                })
+                .toList();
+        return ResponseEntity.ok(body);
+    }
+
+    // -------------------------------------------------------------------------
+    // Thematic Elements (poetry, essays, non-fiction)
+    // -------------------------------------------------------------------------
+
+    @GetMapping(value = "/themes", produces = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<List<Map<String, Object>>> getThemes(@PathVariable Long projectId) {
+        assertProjectExists(projectId);
+        List<Map<String, Object>> body = thematicElementRepository.findByProjectId(projectId).stream()
+                .map(t -> {
+                    Map<String, Object> map = new java.util.LinkedHashMap<>();
+                    map.put("id", t.getId());
+                    map.put("chapterId", t.getChapter() != null ? t.getChapter().getId() : null);
+                    map.put("themeType", t.getThemeType());
+                    map.put("name", t.getName());
+                    map.put("description", t.getDescription());
+                    map.put("occurrences", t.getOccurrencesJson());
+                    map.put("createdAt", t.getCreatedAt());
+                    return map;
+                })
+                .toList();
+        return ResponseEntity.ok(body);
+    }
+
+    // -------------------------------------------------------------------------
     // Mappers
     // -------------------------------------------------------------------------
 
     private CharacterResponse toCharacterResponse(Character c) {
+        List<PersonalityResponse> personalities = personalityRepository.findByCharacterId(c.getId())
+                .stream()
+                .map(p -> new PersonalityResponse(
+                        p.getId(),
+                        p.getName(),
+                        p.getDescription(),
+                        p.getPersonalityTraits(),
+                        p.getVoiceExample(),
+                        p.getTriggerCondition(),
+                        p.isPrimary(),
+                        p.getCreatedAt()
+                ))
+                .toList();
         return new CharacterResponse(
                 c.getId(),
                 c.getProject().getId(),
@@ -171,6 +301,7 @@ public class NarrativeController {
                 c.getRole(),
                 c.getVoiceExample(),
                 c.getFirstAppearanceChapter(),
+                personalities,
                 c.getCreatedAt(),
                 c.getUpdatedAt()
         );
@@ -248,6 +379,7 @@ public class NarrativeController {
                 s.getDialogueEmotionType(),
                 s.getDialogueEmotionIntensity(),
                 s.getDialogueSummary(),
+                s.getActivePersonalityName(),
                 s.getCreatedAt()
         );
     }

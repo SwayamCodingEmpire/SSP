@@ -1,8 +1,12 @@
 package com.isekai.ssp.service;
 
+import com.isekai.ssp.domain.ContextType;
+import com.isekai.ssp.domain.DomainContext;
+import com.isekai.ssp.domain.DomainStrategy;
 import com.isekai.ssp.entities.*;
 import com.isekai.ssp.entities.Character;
 import com.isekai.ssp.helpers.NarrativeTimeType;
+import com.isekai.ssp.repository.CharacterPersonalityRepository;
 import com.isekai.ssp.repository.CharacterRepository;
 import com.isekai.ssp.repository.CharacterStateRepository;
 import com.isekai.ssp.repository.GlossaryRepository;
@@ -13,6 +17,7 @@ import org.springframework.ai.document.Document;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -21,23 +26,20 @@ import java.util.stream.Collectors;
  * Translation context uses RAG (semantic retrieval from pgvector) rather than
  * dumping all characters/glossary for every prompt — which overflows context at scale.
  *
- * Character extraction and scene analysis contexts still use the full relational DB
- * (they need all known characters/scenes to avoid duplication).
- *
- * Flashback detection: when translating a FLASHBACK scene, character states are
- * retrieved from the target chapter number rather than the current one.
+ * Now uses DomainStrategy to determine which context types to retrieve,
+ * building a DomainContext record for strategy-based prompt construction.
  */
 @Service
 public class ContextBuilderService {
 
     private static final Logger logger = LoggerFactory.getLogger(ContextBuilderService.class);
 
-    // How many items to retrieve via RAG
     private static final int CHARACTER_TOP_K       = 6;
     private static final int GLOSSARY_TOP_K        = 10;
     private static final int STYLE_EXAMPLE_TOP_K   = 2;
 
     private final CharacterRepository characterRepository;
+    private final CharacterPersonalityRepository personalityRepository;
     private final GlossaryRepository glossaryRepository;
     private final SceneRepository sceneRepository;
     private final CharacterStateRepository characterStateRepository;
@@ -45,11 +47,13 @@ public class ContextBuilderService {
 
     public ContextBuilderService(
             CharacterRepository characterRepository,
+            CharacterPersonalityRepository personalityRepository,
             GlossaryRepository glossaryRepository,
             SceneRepository sceneRepository,
             CharacterStateRepository characterStateRepository,
             NarrativeEmbeddingService embeddingService) {
         this.characterRepository = characterRepository;
+        this.personalityRepository = personalityRepository;
         this.glossaryRepository = glossaryRepository;
         this.sceneRepository = sceneRepository;
         this.characterStateRepository = characterStateRepository;
@@ -85,10 +89,21 @@ public class ContextBuilderService {
         var sb = new StringBuilder();
         sb.append("## Known characters:\n");
         for (Character c : knownCharacters) {
-            sb.append("- Name: %s | Role: %s | Traits: %s\n".formatted(
+            sb.append("- Name: %s | Role: %s | Traits: %s".formatted(
                     c.getName(),
                     c.getRole() != null ? c.getRole().name() : "UNKNOWN",
                     c.getPersonalityTraits() != null ? c.getPersonalityTraits() : "unknown"));
+
+            List<CharacterPersonality> personalities = personalityRepository.findByCharacterId(c.getId());
+            if (personalities.size() > 1) {
+                sb.append(" | Personalities: ");
+                sb.append(personalities.stream()
+                        .map(p -> p.getName()
+                                + (p.isPrimary() ? " [primary]" : "")
+                                + (p.getVoiceExample() != null ? ": \"" + p.getVoiceExample() + "\"" : ""))
+                        .collect(java.util.stream.Collectors.joining("; ")));
+            }
+            sb.append("\n");
         }
         sb.append("\n## Chapter %d text:\n\n".formatted(chapter.getChapterNumber()));
         sb.append(chapter.getOriginalText());
@@ -103,21 +118,77 @@ public class ContextBuilderService {
     }
 
     // -------------------------------------------------------------------------
-    // Translation context builder (RAG-based)
+    // Domain-aware context builder (strategy-driven RAG)
     // -------------------------------------------------------------------------
 
+    /**
+     * Builds a DomainContext by retrieving only the context types required by the strategy.
+     */
+    public DomainContext buildDomainContext(Chapter chapter, String textToTranslate, DomainStrategy strategy) {
+        Project project = chapter.getProject();
+        Long projectId = project.getId();
+        Set<ContextType> required = strategy.getRequiredContextTypes();
+
+        // Scene/flashback resolution (needed for character state retrieval and scene context)
+        List<Scene> scenes = sceneRepository.findByChapterId(chapter.getId());
+        String sceneContext = required.contains(ContextType.SCENES) ? formatSceneContext(scenes) : "";
+        String sceneTypeForRag = extractPrimarySceneType(scenes);
+        int stateChapterNumber = resolveStateChapterNumber(chapter, scenes);
+
+        // Retrieve only what the strategy needs
+        String characterBlock = required.contains(ContextType.CHARACTERS)
+                ? buildRagCharacterBlock(textToTranslate, projectId, stateChapterNumber)
+                : "";
+        String glossaryBlock = required.contains(ContextType.GLOSSARY)
+                ? buildRagGlossaryBlock(textToTranslate, projectId)
+                : "";
+        String styleExamplesBlock = required.contains(ContextType.STYLE_EXAMPLES)
+                ? buildRagStyleExamplesBlock(textToTranslate, projectId, sceneTypeForRag)
+                : "";
+
+        // New context types (return empty for now until services are fully wired)
+        String terminologyBlock = required.contains(ContextType.TERMINOLOGY)
+                ? buildTerminologyBlock(textToTranslate, projectId)
+                : "";
+        String themeBlock = required.contains(ContextType.THEMES)
+                ? buildThemeBlock(projectId)
+                : "";
+        String translationMemoryBlock = required.contains(ContextType.TRANSLATION_MEMORY)
+                ? buildTranslationMemoryBlock(textToTranslate, projectId)
+                : "";
+
+        String styleGuide = project.getStyleGuide() != null ? project.getStyleGuide()
+                : (project.getTranslationStyle() != null ? project.getTranslationStyle() : "");
+
+        return new DomainContext(
+                project.getContentType(),
+                project.getSourceLanguage(),
+                project.getTargetLanguage(),
+                glossaryBlock,
+                characterBlock,
+                sceneContext,
+                styleGuide,
+                styleExamplesBlock,
+                terminologyBlock,
+                themeBlock,
+                translationMemoryBlock,
+                textToTranslate
+        );
+    }
+
+    /**
+     * Legacy method — builds a TranslationContext for backward compatibility.
+     * Used if any code still references the old record type.
+     */
     public TranslationContext buildTranslationContext(Chapter chapter, String textToTranslate) {
         Project project = chapter.getProject();
         Long projectId = project.getId();
 
-        // Determine which chapter to use for character state retrieval
-        // For flashback scenes, retrieve character states at the flashback target chapter
         List<Scene> scenes = sceneRepository.findByChapterId(chapter.getId());
         String sceneContext = formatSceneContext(scenes);
         String sceneTypeForRag = extractPrimarySceneType(scenes);
         int stateChapterNumber = resolveStateChapterNumber(chapter, scenes);
 
-        // RAG: retrieve only semantically relevant context for this text chunk
         String characterBlock = buildRagCharacterBlock(textToTranslate, projectId, stateChapterNumber);
         String glossaryBlock  = buildRagGlossaryBlock(textToTranslate, projectId);
         String styleExamplesBlock = buildRagStyleExamplesBlock(textToTranslate, projectId, sceneTypeForRag);
@@ -135,6 +206,56 @@ public class ContextBuilderService {
     }
 
     // -------------------------------------------------------------------------
+    // New context block builders (placeholder — will be enriched as services mature)
+    // -------------------------------------------------------------------------
+
+    private String buildTerminologyBlock(String text, Long projectId) {
+        // Will be populated by TerminologyExtractionService results via RAG
+        try {
+            List<Document> docs = embeddingService.findRelevantDocuments(text, projectId, "terminology", 10);
+            if (docs.isEmpty()) return "(No domain terminology extracted yet)";
+            return docs.stream()
+                    .map(Document::getText)
+                    .collect(Collectors.joining("\n- ", "- ", ""));
+        } catch (Exception e) {
+            logger.warn("Terminology retrieval failed: {}", e.getMessage());
+            return "(No domain terminology extracted yet)";
+        }
+    }
+
+    private String buildThemeBlock(Long projectId) {
+        // Will be populated by ThemeExtractionService results via RAG
+        try {
+            List<Document> docs = embeddingService.findDocumentsByType(projectId, "theme", 5);
+            if (docs.isEmpty()) return "";
+            return docs.stream()
+                    .map(Document::getText)
+                    .collect(Collectors.joining("\n- ", "## Themes\n- ", ""));
+        } catch (Exception e) {
+            logger.warn("Theme retrieval failed: {}", e.getMessage());
+            return "";
+        }
+    }
+
+    private String buildTranslationMemoryBlock(String text, Long projectId) {
+        // Will be populated by TranslationMemoryService via RAG
+        try {
+            List<Document> docs = embeddingService.findRelevantDocuments(text, projectId, "translation_memory", 3);
+            if (docs.isEmpty()) return "";
+            StringBuilder sb = new StringBuilder("## Translation memory matches\n");
+            int i = 1;
+            for (Document doc : docs) {
+                sb.append("Match ").append(i++).append(":\n");
+                sb.append(doc.getText()).append("\n\n");
+            }
+            return sb.toString().trim();
+        } catch (Exception e) {
+            logger.warn("Translation memory retrieval failed: {}", e.getMessage());
+            return "";
+        }
+    }
+
+    // -------------------------------------------------------------------------
     // RAG retrieval helpers
     // -------------------------------------------------------------------------
 
@@ -142,16 +263,13 @@ public class ContextBuilderService {
         try {
             List<Document> docs = embeddingService.findRelevantCharacters(text, projectId, CHARACTER_TOP_K);
             if (docs.isEmpty()) {
-                // Fallback: if vector store is empty (before first embedding), use relational data
                 List<Character> all = characterRepository.findByProjectId(projectId);
                 return formatCharacters(all);
             }
 
-            // For each character doc, try to enrich with their temporal state
             StringBuilder sb = new StringBuilder();
             for (Document doc : docs) {
                 sb.append("- ").append(doc.getText()).append("\n");
-                // Add temporal state info if available (key for flashback handling)
                 String entityId = doc.getMetadata() != null
                         ? (String) doc.getMetadata().get("entity_id") : null;
                 if (entityId != null) {
@@ -159,7 +277,8 @@ public class ContextBuilderService {
                         Long charId = Long.parseLong(entityId);
                         characterStateRepository.findLatestStateAtOrBefore(charId, stateChapterNumber)
                                 .ifPresent(state -> {
-                                    if (state.getEmotionalState() != null || state.getCurrentGoal() != null) {
+                                    if (state.getEmotionalState() != null || state.getCurrentGoal() != null
+                                            || state.getActivePersonalityName() != null) {
                                         sb.append("  [At ch.").append(stateChapterNumber).append("] ");
                                         if (state.getEmotionalState() != null)
                                             sb.append("State: ").append(state.getEmotionalState());
@@ -167,11 +286,22 @@ public class ContextBuilderService {
                                             sb.append(" | Goal: ").append(state.getCurrentGoal());
                                         if (state.getArcStage() != null)
                                             sb.append(" | Arc: ").append(state.getArcStage());
+                                        if (state.getActivePersonalityName() != null) {
+                                            sb.append(" | Active personality: ").append(state.getActivePersonalityName());
+                                            personalityRepository.findByCharacterIdAndName(
+                                                            charId, state.getActivePersonalityName())
+                                                    .ifPresent(p -> {
+                                                        if (p.getPersonalityTraits() != null)
+                                                            sb.append(" | Traits: ").append(p.getPersonalityTraits());
+                                                        if (p.getVoiceExample() != null)
+                                                            sb.append(" | Voice: \"").append(p.getVoiceExample()).append("\"");
+                                                    });
+                                        }
                                         sb.append("\n");
                                     }
                                 });
                     } catch (NumberFormatException e) {
-                        // ignore — metadata parse failure
+                        // ignore
                     }
                 }
             }
@@ -186,7 +316,6 @@ public class ContextBuilderService {
         try {
             List<Document> docs = embeddingService.findRelevantGlossaryTerms(text, projectId, GLOSSARY_TOP_K);
             if (docs.isEmpty()) {
-                // Fallback to enforced terms only
                 List<Glossary> terms = glossaryRepository.findByProjectIdAndEnforceConsistencyTrue(projectId);
                 return formatGlossary(terms);
             }
@@ -221,11 +350,6 @@ public class ContextBuilderService {
     // Flashback chapter resolution
     // -------------------------------------------------------------------------
 
-    /**
-     * Returns the chapter number to use for character state retrieval.
-     * For FLASHBACK scenes, this is the flashback target chapter.
-     * For PRESENT/FLASH_FORWARD, this is the current chapter.
-     */
     private int resolveStateChapterNumber(Chapter chapter, List<Scene> scenes) {
         for (Scene scene : scenes) {
             if (scene.getNarrativeTimeType() == NarrativeTimeType.FLASHBACK
@@ -287,7 +411,7 @@ public class ContextBuilderService {
     }
 
     // -------------------------------------------------------------------------
-    // TranslationContext record
+    // TranslationContext record (legacy, kept for backward compatibility)
     // -------------------------------------------------------------------------
 
     public record TranslationContext(
@@ -295,9 +419,9 @@ public class ContextBuilderService {
             String targetLanguage,
             String glossaryBlock,
             String characterBlock,
-            String sceneContext,       // tone/pace/tension/type from SceneAnalysisService
-            String styleGuide,         // project-level prose style descriptor
-            String styleExamplesBlock, // RAG-retrieved few-shot examples for this scene type
+            String sceneContext,
+            String styleGuide,
+            String styleExamplesBlock,
             String textToTranslate
     ) {}
 }

@@ -30,10 +30,13 @@ public class TranslationController {
     @PostMapping("/chapters/{chapterId}")
     public ResponseEntity<Void> translateChapter(
             @PathVariable Long chapterId,
-            @RequestParam(required = false) String provider) {
+            @RequestParam(required = false) String provider,
+            @RequestParam(required = false) String model) {
         chapterRepository.findById(chapterId)
                 .orElseThrow(() -> new IllegalArgumentException("Chapter not found: " + chapterId));
-        translationService.translateChapterAsync(chapterId, provider);
+        // If model is specified, use it as the provider override (vLLM adapters are loaded by model name)
+        String resolvedProvider = model != null ? model : provider;
+        translationService.translateChapterAsync(chapterId, resolvedProvider);
         return ResponseEntity.accepted().build();
     }
 

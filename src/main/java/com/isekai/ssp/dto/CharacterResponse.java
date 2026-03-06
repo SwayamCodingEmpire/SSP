@@ -16,6 +16,7 @@ public record CharacterResponse(
         CharacterRole role,
         String voiceExample,
         Integer firstAppearanceChapter,
+        List<PersonalityResponse> personalities,
         LocalDateTime createdAt,
         LocalDateTime updatedAt
 ) {}

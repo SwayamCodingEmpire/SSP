@@ -83,6 +83,14 @@ public class CharacterState {
     private String dialogueSummary;
 
     /**
+     * Which personality/alter ego was dominant in this chapter.
+     * Matches CharacterPersonality.name for the active alter ego.
+     * Null for single-personality characters or when the base personality is active.
+     * Set by CharacterExtractionService (initial), updated by SpeakerDetectionService (refined).
+     */
+    private String activePersonalityName;
+
+    /**
      * Faction, guild, organization, or group the character belongs to at this chapter.
      * Null when not applicable (solo characters, undefined allegiance).
      * e.g. "Fairy Tail Guild", "Magic Council", "Shadow Monarch's Army"

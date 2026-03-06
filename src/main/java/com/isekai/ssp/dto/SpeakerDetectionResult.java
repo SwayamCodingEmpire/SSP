@@ -9,6 +9,12 @@ public record SpeakerDetectionResult(
             String characterName,
             String emotionType,
             double emotionIntensity,
-            String dialogueSummary
+            String dialogueSummary,
+            /**
+             * Which personality/alter ego was speaking in this chapter.
+             * Matches CharacterPersonality.name. Null if single-personality or base personality.
+             * e.g. "Hyde" when Hyde is speaking, null when Jekyll is.
+             */
+            String activePersonalityName
     ) {}
 }

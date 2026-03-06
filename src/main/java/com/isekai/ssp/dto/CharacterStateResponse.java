@@ -19,5 +19,6 @@ public record CharacterStateResponse(
         String dialogueEmotionType,
         Double dialogueEmotionIntensity,
         String dialogueSummary,
+        String activePersonalityName,
         LocalDateTime createdAt
 ) {}

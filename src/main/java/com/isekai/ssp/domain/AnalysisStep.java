@@ -1,0 +1,12 @@
+package com.isekai.ssp.domain;
+
+public enum AnalysisStep {
+    CHARACTER_EXTRACTION,
+    SPEAKER_DETECTION,
+    SCENE_ANALYSIS,
+    SECTION_ANALYSIS,
+    FORM_ANALYSIS,
+    DIALOGUE_ANALYSIS,
+    THEME_EXTRACTION,
+    TERMINOLOGY_EXTRACTION
+}

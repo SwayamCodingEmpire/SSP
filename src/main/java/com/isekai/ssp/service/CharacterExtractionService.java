@@ -3,6 +3,7 @@ package com.isekai.ssp.service;
 import com.isekai.ssp.dto.CharacterExtractionResult;
 import com.isekai.ssp.entities.Chapter;
 import com.isekai.ssp.entities.Character;
+import com.isekai.ssp.entities.CharacterPersonality;
 import com.isekai.ssp.entities.CharacterRelationship;
 import com.isekai.ssp.entities.CharacterState;
 import com.isekai.ssp.entities.RelationshipState;
@@ -10,6 +11,7 @@ import com.isekai.ssp.helpers.CharacterRole;
 import com.isekai.ssp.helpers.RelationshipType;
 import com.isekai.ssp.llm.LlmProvider;
 import com.isekai.ssp.llm.LlmProviderRegistry;
+import com.isekai.ssp.repository.CharacterPersonalityRepository;
 import com.isekai.ssp.repository.CharacterRelationshipRepository;
 import com.isekai.ssp.repository.CharacterRepository;
 import com.isekai.ssp.repository.CharacterStateRepository;
@@ -32,6 +34,7 @@ public class CharacterExtractionService {
 
     private final LlmProviderRegistry providerRegistry;
     private final CharacterRepository characterRepository;
+    private final CharacterPersonalityRepository personalityRepository;
     private final CharacterRelationshipRepository relationshipRepository;
     private final RelationshipStateRepository relationshipStateRepository;
     private final CharacterStateRepository characterStateRepository;
@@ -41,6 +44,7 @@ public class CharacterExtractionService {
     public CharacterExtractionService(
             LlmProviderRegistry providerRegistry,
             CharacterRepository characterRepository,
+            CharacterPersonalityRepository personalityRepository,
             CharacterRelationshipRepository relationshipRepository,
             RelationshipStateRepository relationshipStateRepository,
             CharacterStateRepository characterStateRepository,
@@ -48,6 +52,7 @@ public class CharacterExtractionService {
             NarrativeEmbeddingService embeddingService) {
         this.providerRegistry = providerRegistry;
         this.characterRepository = characterRepository;
+        this.personalityRepository = personalityRepository;
         this.relationshipRepository = relationshipRepository;
         this.relationshipStateRepository = relationshipStateRepository;
         this.characterStateRepository = characterStateRepository;
@@ -76,6 +81,7 @@ public class CharacterExtractionService {
             for (CharacterExtractionResult.ExtractedCharacter extracted : result.characters()) {
                 Character character = upsertCharacter(chapter, extracted);
                 savedCharacters.add(character);
+                savePersonalities(character, extracted);
                 createCharacterState(chapter, character, extracted);
                 embeddingService.embedCharacter(character);
             }
@@ -173,6 +179,7 @@ public class CharacterExtractionService {
         state.setArcStage(extracted.arcStage());
         state.setAffiliation(extracted.affiliation());
         state.setLoyalty(extracted.loyalty());
+        state.setActivePersonalityName(extracted.activePersonalityName());
         state.setCreatedAt(LocalDateTime.now());
         CharacterState saved = characterStateRepository.save(state);
         embeddingService.embedCharacterState(saved);
@@ -249,6 +256,63 @@ public class CharacterExtractionService {
     }
 
     // -------------------------------------------------------------------------
+    // Personality management
+    // -------------------------------------------------------------------------
+
+    private void savePersonalities(Character character,
+                                    CharacterExtractionResult.ExtractedCharacter extracted) {
+        if (extracted.personalities() == null || extracted.personalities().isEmpty()) {
+            ensurePrimaryPersonality(character);
+            return;
+        }
+
+        for (CharacterExtractionResult.ExtractedPersonality ep : extracted.personalities()) {
+            Optional<CharacterPersonality> existingOpt =
+                    personalityRepository.findByCharacterIdAndName(character.getId(), ep.name());
+
+            CharacterPersonality p;
+            if (existingOpt.isPresent()) {
+                p = existingOpt.get();
+                if (ep.description() != null) p.setDescription(ep.description());
+                if (ep.personalityTraits() != null) p.setPersonalityTraits(ep.personalityTraits());
+                if (p.getVoiceExample() == null && ep.voiceExample() != null)
+                    p.setVoiceExample(ep.voiceExample());
+                if (ep.triggerCondition() != null) p.setTriggerCondition(ep.triggerCondition());
+            } else {
+                p = new CharacterPersonality();
+                p.setCharacter(character);
+                p.setName(ep.name());
+                p.setDescription(ep.description());
+                p.setPersonalityTraits(ep.personalityTraits());
+                p.setVoiceExample(ep.voiceExample());
+                p.setTriggerCondition(ep.triggerCondition());
+                p.setPrimary(ep.isPrimary());
+                p.setCreatedAt(LocalDateTime.now());
+            }
+
+            CharacterPersonality saved = personalityRepository.save(p);
+            embeddingService.embedPersonality(saved);
+        }
+    }
+
+    /** Ensures every character has at least one primary personality entry. */
+    private void ensurePrimaryPersonality(Character character) {
+        Optional<CharacterPersonality> primary =
+                personalityRepository.findByCharacterIdAndIsPrimaryTrue(character.getId());
+        if (primary.isEmpty()) {
+            CharacterPersonality p = new CharacterPersonality();
+            p.setCharacter(character);
+            p.setName(character.getName());
+            p.setPersonalityTraits(character.getPersonalityTraits());
+            p.setVoiceExample(character.getVoiceExample());
+            p.setPrimary(true);
+            p.setCreatedAt(LocalDateTime.now());
+            CharacterPersonality saved = personalityRepository.save(p);
+            embeddingService.embedPersonality(saved);
+        }
+    }
+
+    // -------------------------------------------------------------------------
     // Parsers
     // -------------------------------------------------------------------------
 
@@ -292,6 +356,18 @@ public class CharacterExtractionService {
             - loyalty: Who or what they are loyal to — may differ from affiliation.
                        e.g. "Fiercely loyal to the King", "Secretly working against the guild".
                        Null if not determinable from this chapter.
+            - personalities: JSON array of ALL distinct personalities/alter egos observed for this character.
+                             Single-personality characters: one entry with isPrimary=true and the character's name.
+                             Multi-personality characters: one entry per observed personality.
+                             Each entry has:
+                               - name: Personality name (e.g. "Hyde", "Yami Yugi"). Use character name for primary.
+                               - description: Behavioral markers, physical signs, speech patterns that identify this personality.
+                               - personalityTraits: Comma-separated traits specific to this personality.
+                               - voiceExample: One representative line of dialogue capturing this personality's voice. Null if no dialogue.
+                               - triggerCondition: What activates this personality. Null for isPrimary=true.
+                               - isPrimary: true for the base/default personality, false for alter egos.
+            - activePersonalityName: The name of the personality dominant in THIS chapter.
+                                     Must match one of the names in personalities. Null if only the primary personality appeared.
 
             For each RELATIONSHIP between characters in this chapter, determine:
             - character1Name: Name of the first character

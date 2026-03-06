@@ -2,7 +2,9 @@ package com.isekai.ssp.controller;
 
 import com.isekai.ssp.dto.ChapterProcessingRequest;
 import com.isekai.ssp.dto.ChapterProcessingResponse;
+import com.isekai.ssp.helpers.ContentType;
 import com.isekai.ssp.helpers.FileFormat;
+import com.isekai.ssp.repository.ProjectRepository;
 import com.isekai.ssp.service.ChapterProcessingService;
 import com.isekai.ssp.service.DocumentTextExtractor;
 import org.springframework.http.MediaType;
@@ -22,12 +24,15 @@ public class ChapterProcessingController {
 
     private final ChapterProcessingService chapterProcessingService;
     private final DocumentTextExtractor documentTextExtractor;
+    private final ProjectRepository projectRepository;
 
     public ChapterProcessingController(
             ChapterProcessingService chapterProcessingService,
-            DocumentTextExtractor documentTextExtractor) {
+            DocumentTextExtractor documentTextExtractor,
+            ProjectRepository projectRepository) {
         this.chapterProcessingService = chapterProcessingService;
         this.documentTextExtractor = documentTextExtractor;
+        this.projectRepository = projectRepository;
     }
 
     /**
@@ -52,7 +57,8 @@ public class ChapterProcessingController {
             @RequestParam("file") MultipartFile file,
             @RequestParam Long projectId,
             @RequestParam Integer chapterNumber,
-            @RequestParam(required = false) String title) {
+            @RequestParam(required = false) String title,
+            @RequestParam(required = false) String contentType) {
 
         if (file.isEmpty()) {
             return ResponseEntity.badRequest().build();
@@ -69,6 +75,9 @@ public class ChapterProcessingController {
             throw new DocumentTextExtractor.DocumentExtractionException(
                     "Failed to read uploaded file: " + e.getMessage(), e);
         }
+
+        // Update project content type if specified
+        updateProjectContentType(projectId, contentType);
 
         // Process the extracted text through the existing pipeline
         ChapterProcessingResponse response = chapterProcessingService.processChapter(
@@ -114,8 +123,10 @@ public class ChapterProcessingController {
     public ResponseEntity<ChapterProcessingResponse> processChapterText(
             @RequestParam Long projectId,
             @RequestParam Integer chapterNumber,
-            @RequestParam(required = false) String title,
+            @RequestParam(required = false) String title,@RequestParam(required = false) String contentType,
             @RequestBody String chapterText) {
+
+        updateProjectContentType(projectId, contentType);
 
         ChapterProcessingResponse response = chapterProcessingService.processChapter(
                 projectId,
@@ -139,6 +150,22 @@ public class ChapterProcessingController {
 
         ChapterProcessingResponse response = chapterProcessingService.getChapterStatus(chapterId);
         return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Sets the project's content type if a valid contentType string is provided.
+     */
+    private void updateProjectContentType(Long projectId, String contentType) {
+        if (contentType == null || contentType.isBlank()) return;
+        try {
+            ContentType ct = ContentType.valueOf(contentType);
+            projectRepository.findById(projectId).ifPresent(project -> {
+                project.setContentType(ct);
+                projectRepository.save(project);
+            });
+        } catch (IllegalArgumentException e) {
+            // ignore invalid content type — use project default
+        }
     }
 
     /**

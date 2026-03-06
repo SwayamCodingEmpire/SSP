@@ -107,6 +107,10 @@ public class SpeakerDetectionService {
             state.setDialogueEmotionType(dialogue.emotionType());
             state.setDialogueEmotionIntensity(dialogue.emotionIntensity());
             state.setDialogueSummary(dialogue.dialogueSummary());
+            // Refine active personality — speaker detection is a second pass over extraction
+            if (dialogue.activePersonalityName() != null) {
+                state.setActivePersonalityName(dialogue.activePersonalityName());
+            }
             characterStateRepository.save(state);
 
             // Re-embed so pgvector gets the richer temporal voice profile
@@ -128,6 +132,10 @@ public class SpeakerDetectionService {
             - emotionType: Dominant emotion — one of NEUTRAL, HAPPY, SAD, ANGRY, FEARFUL, URGENT, EXCITED, CONTEMPLATIVE
             - emotionIntensity: 0.0 (barely perceptible) to 1.0 (overwhelming)
             - dialogueSummary: Brief summary of what this character says and how they say it
+            - activePersonalityName: If this character has multiple personalities/alter egos and a
+              non-primary personality is the one speaking in this chapter, provide the personality
+              name here (must match one of the character's known personalities from the context).
+              Null for single-personality characters or when the base/primary personality speaks.
 
             Only include characters who actually speak in this chapter.
 

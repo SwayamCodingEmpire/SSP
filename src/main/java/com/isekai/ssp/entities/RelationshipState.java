@@ -60,6 +60,15 @@ public class RelationshipState {
     private Double affinity;
 
     /**
+     * Notes how this relationship manifests differently when a character's alter ego is active.
+     * e.g. "Other characters fear Hyde but trust Jekyll — affinity swings from -0.8 to 0.6
+     *       depending on which personality they are currently facing."
+     * Null when no personality switching is relevant to this relationship in this chapter.
+     */
+    @Column(columnDefinition = "TEXT")
+    private String activePersonalityContext;
+
+    /**
      * What specifically happened to this relationship in this chapter.
      * Captures relationship-changing events, revelations, and emotional shifts.
      * e.g. "Shirou discovered Archer's true identity, shattering their uneasy truce"

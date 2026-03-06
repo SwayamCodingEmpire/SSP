@@ -82,6 +82,13 @@ ssp:
       two-pass: true        # Pass 1: faithful draft. Pass 2: literary elevation. Mirrors professional translator workflow.
     analysis:
       enabled: true
+    quality:
+      threshold: 0.7             # Below this score → flagged for human review
+    vllm:
+      enabled: false                    # Toggle for local vLLM inference
+      base-url: ${VLLM_BASE_URL:http://localhost:8000}
+      model: ${VLLM_MODEL:mistral-7b-instruct}
+      temperature: 0.3
   async:
     core-pool-size: 4
     max-pool-size: 8

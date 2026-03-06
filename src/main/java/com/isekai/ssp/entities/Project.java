@@ -1,5 +1,6 @@
 package com.isekai.ssp.entities;
 
+import com.isekai.ssp.helpers.ContentType;
 import com.isekai.ssp.helpers.FileFormat;
 import com.isekai.ssp.helpers.ProjectStatus;
 import jakarta.persistence.*;
@@ -38,6 +39,12 @@ public class Project {
 
     @Enumerated(EnumType.STRING)
     private FileFormat fileFormat;      // EPUB, TXT, PDF, DOCX
+
+    @Enumerated(EnumType.STRING)
+    private ContentType contentType = ContentType.NOVEL;
+
+    @Column(columnDefinition = "TEXT")
+    private String styleGuide;
 
     @Column(nullable = false)
     private LocalDateTime createdAt;

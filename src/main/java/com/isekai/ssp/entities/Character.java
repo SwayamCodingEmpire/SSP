@@ -67,4 +67,12 @@ public class Character {
 
     @OneToMany(mappedBy = "character2", cascade = CascadeType.ALL)
     private List<CharacterRelationship> relationshipsTo;
+
+    /**
+     * All personalities/alter egos for this character.
+     * Single-personality characters have exactly one entry (isPrimary=true).
+     * Multi-personality characters have one primary + N alter ego entries.
+     */
+    @OneToMany(mappedBy = "character", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    private List<CharacterPersonality> personalities;
 }
