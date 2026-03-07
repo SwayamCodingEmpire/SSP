@@ -1,38 +1,31 @@
 package com.isekai.ssp.config;
 
-import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.task.SimpleAsyncTaskExecutorBuilder;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.task.SimpleAsyncTaskExecutor;
 import org.springframework.scheduling.annotation.EnableAsync;
-import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
-
-import java.util.concurrent.Executor;
 
 /**
  * Async configuration for AI processing tasks.
- * AI operations (analysis, translation) run on a dedicated thread pool.
+ *
+ * All AI operations (analysis, translation, RAG embedding calls) are I/O-bound —
+ * they block waiting on HTTP responses from OpenAI / Anthropic / pgvector.
+ * Virtual threads park during I/O at near-zero cost, freeing the underlying
+ * platform thread for other work. No pool size or queue capacity to tune.
+ *
+ * spring.threads.virtual.enabled=true also enables virtual threads for Spring MVC,
+ * WebFlux, WebSocket, and JPA bootstrap via the auto-configured applicationTaskExecutor.
  */
 @Configuration
 @EnableAsync
 public class AsyncConfig {
 
-    @Value("${ssp.async.core-pool-size:4}")
-    private int corePoolSize;
-
-    @Value("${ssp.async.max-pool-size:8}")
-    private int maxPoolSize;
-
-    @Value("${ssp.async.queue-capacity:100}")
-    private int queueCapacity;
-
     @Bean(name = "aiTaskExecutor")
-    public Executor aiTaskExecutor() {
-        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
-        executor.setCorePoolSize(corePoolSize);
-        executor.setMaxPoolSize(maxPoolSize);
-        executor.setQueueCapacity(queueCapacity);
-        executor.setThreadNamePrefix("ai-");
-        executor.initialize();
-        return executor;
+    public SimpleAsyncTaskExecutor aiTaskExecutor(SimpleAsyncTaskExecutorBuilder builder) {
+        return builder
+                .virtualThreads(true)
+                .threadNamePrefix("ai-vt-")
+                .build();
     }
 }

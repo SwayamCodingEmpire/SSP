@@ -49,10 +49,11 @@ public class SpeakerDetectionService {
     }
 
     @Transactional
-    public SpeakerDetectionResult detectSpeakers(Chapter chapter) {
-        List<Character> characters = characterRepository
-                .findByProjectId(chapter.getProject().getId());
-
+    public SpeakerDetectionResult detectSpeakers(Chapter chapter, List<Character> characters) {
+        // characters = Step 1 result from ChapterAnalysisOrchestrator (already scene-relevant).
+        // Previously this method called characterRepository.findByProjectId() internally,
+        // which grew O(total characters) across the project. Now the caller passes only
+        // the characters active in this chapter.
         if (characters.isEmpty()) {
             return new SpeakerDetectionResult(List.of());
         }
@@ -127,7 +128,9 @@ public class SpeakerDetectionService {
             - characterName: Exact name from the character list
             - emotionType: Dominant emotion — one of NEUTRAL, HAPPY, SAD, ANGRY, FEARFUL, URGENT, EXCITED, CONTEMPLATIVE
             - emotionIntensity: 0.0 (barely perceptible) to 1.0 (overwhelming)
-            - dialogueSummary: Brief summary of what this character says and how they say it
+            - dialogueSummary: Brief summary of what this character says and how they say it.
+              IMPORTANT: Never reproduce verbatim sound effects, roars, or onomatopoeia in the summary —
+              describe them in prose instead (e.g. "lets out a guttural roar of agony", not the roar itself).
 
             Only include characters who actually speak in this chapter.
 

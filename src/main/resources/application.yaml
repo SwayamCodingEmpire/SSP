@@ -2,6 +2,10 @@ spring:
   application:
     name: SSP
 
+  threads:
+    virtual:
+      enabled: true   # virtual threads for MVC, WebFlux, WebSocket, JPA, and @Async
+
   datasource:
     url: ${DB_URL:jdbc:postgresql://localhost:5432/ssp?characterEncoding=UTF-8}
     username: ${DB_USERNAME:postgres}
@@ -82,7 +86,3 @@ ssp:
       two-pass: true        # Pass 1: faithful draft. Pass 2: literary elevation. Mirrors professional translator workflow.
     analysis:
       enabled: true
-  async:
-    core-pool-size: 4
-    max-pool-size: 8
-    queue-capacity: 100

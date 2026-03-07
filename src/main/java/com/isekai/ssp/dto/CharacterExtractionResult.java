@@ -36,7 +36,23 @@ public record CharacterExtractionResult(
              * e.g. "Fiercely loyal to the King", "Secretly working for the enemy faction".
              * Null when not determined.
              */
-            String loyalty
+            String loyalty,
+            /**
+             * Dominant dialogue emotion if they speak — one of NEUTRAL, HAPPY, SAD, ANGRY,
+             * FEARFUL, URGENT, EXCITED, CONTEMPLATIVE. Null if no dialogue.
+             */
+            String dialogueEmotionType,
+            /**
+             * Emotional intensity: 0.0 (barely perceptible) to 1.0 (overwhelming).
+             * Null if no dialogue.
+             */
+            Double dialogueEmotionIntensity,
+            /**
+             * Brief summary of what this character says and how they say it.
+             * IMPORTANT: Never reproduce verbatim sound effects or onomatopoeia — describe in prose.
+             * Null if no dialogue.
+             */
+            String dialogueSummary
     ) {}
 
     public record ExtractedRelationship(

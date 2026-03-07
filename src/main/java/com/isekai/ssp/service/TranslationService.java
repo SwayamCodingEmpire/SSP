@@ -1,6 +1,5 @@
 package com.isekai.ssp.service;
 
-import com.isekai.ssp.dto.TranslationResult;
 import com.isekai.ssp.entities.Chapter;
 import com.isekai.ssp.entities.Segment;
 import com.isekai.ssp.helpers.ChapterStatus;
@@ -11,7 +10,7 @@ import com.isekai.ssp.repository.ChapterRepository;
 import com.isekai.ssp.repository.SegmentRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.ai.converter.BeanOutputConverter;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
@@ -22,6 +21,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
+import java.util.concurrent.Executor;
 import java.util.stream.Collectors;
 
 /**
@@ -45,6 +46,7 @@ public class TranslationService {
     private final SegmentRepository segmentRepository;
     private final ChapterRepository chapterRepository;
     private final ContextBuilderService contextBuilder;
+    private final Executor taskExecutor;
 
     @Value("${ssp.ai.translation.two-pass:true}")
     private boolean twoPassEnabled;
@@ -53,11 +55,13 @@ public class TranslationService {
             LlmProviderRegistry providerRegistry,
             SegmentRepository segmentRepository,
             ChapterRepository chapterRepository,
-            ContextBuilderService contextBuilder) {
+            ContextBuilderService contextBuilder,
+            @Qualifier("aiTaskExecutor") Executor taskExecutor) {
         this.providerRegistry = providerRegistry;
         this.segmentRepository = segmentRepository;
         this.chapterRepository = chapterRepository;
         this.contextBuilder = contextBuilder;
+        this.taskExecutor = taskExecutor;
     }
 
     // -------------------------------------------------------------------------
@@ -86,11 +90,24 @@ public class TranslationService {
                 segmentRepository.saveAll(segments);
                 chapter.setTotalSegments(segments.size());
 
-                for (Segment seg : segments) {
-                    seg.setTranslatedText(translateText(chapter, seg.getOriginalText(), provider));
-                    seg.setStatus(TranslationStatus.AI_TRANSLATED);
-                    seg.setTranslatedAt(LocalDateTime.now());
-                    segmentRepository.save(seg);
+                // Translate all segments in parallel — each segment is independent.
+                // Pass 1 → Pass 2 within a segment stays sequential (Pass 2 needs Pass 1 output).
+                List<CompletableFuture<Void>> futures = segments.stream()
+                        .map(seg -> CompletableFuture.runAsync(() -> {
+                            seg.setTranslatedText(translateText(chapter, seg.getOriginalText(), provider));
+                            seg.setStatus(TranslationStatus.AI_TRANSLATED);
+                            seg.setTranslatedAt(LocalDateTime.now());
+                            segmentRepository.save(seg);
+                        }, taskExecutor))
+                        .toList();
+                try {
+                    CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+                } catch (CompletionException e) {
+                    Throwable cause = e.getCause();
+                    if (cause instanceof AiServiceException aise) throw aise;
+                    throw new AiServiceException(
+                            providerOverride != null ? providerOverride : providerRegistry.getDefaultName(),
+                            "translation", "Segment translation failed for chapter " + chapterId, cause);
                 }
 
                 chapter.setTranslatedText(segments.stream()
@@ -143,22 +160,18 @@ public class TranslationService {
         );
 
         logger.debug("Pass 2: literary elevation");
-        BeanOutputConverter<TranslationResult> converter = new BeanOutputConverter<>(TranslationResult.class);
-        String response = provider.generate(
+        return provider.generate(
                 buildLiterarySystemPrompt(ctx),
-                buildLiteraryUserPrompt(ctx, faithfulDraft) + "\n\n" + converter.getFormat()
+                buildLiteraryUserPrompt(ctx, faithfulDraft)
         );
-        return converter.convert(response).translatedText();
     }
 
     /** Single-pass fallback — literary framing without the faithful pre-draft. */
     private String singlePassTranslation(ContextBuilderService.TranslationContext ctx, LlmProvider provider) {
-        BeanOutputConverter<TranslationResult> converter = new BeanOutputConverter<>(TranslationResult.class);
-        String response = provider.generate(
+        return provider.generate(
                 buildLiterarySystemPrompt(ctx),
-                buildSinglePassUserPrompt(ctx) + "\n\n" + converter.getFormat()
+                buildSinglePassUserPrompt(ctx)
         );
-        return converter.convert(response).translatedText();
     }
 
     // -------------------------------------------------------------------------
@@ -177,6 +190,9 @@ public class TranslationService {
                 - Use the enforced glossary terms below without any deviation.
                 - Do NOT beautify, embellish, or restructure for style. That comes in the next pass.
                 - If a concept has no direct equivalent, transliterate and add a brief [bracketed note].
+                - Sound effects and onomatopoeia must be transcribed as-is — NEVER repeat or extend
+                  characters (e.g. writing "AaAaAa..." for many lines). Keep them exactly as short as
+                  they appear in the source.
 
                 ## Enforced glossary
                 %s
@@ -230,6 +246,9 @@ public class TranslationService {
                 - Dialogue must carry the speaker's register exactly: formal, clipped, lyrical, or
                   crude as they are — voice is character.
                 - Read your output aloud mentally. If it doesn't breathe, rewrite it.
+                - Sound effects and onomatopoeia MUST be kept at the same length as in the source.
+                  NEVER repeat characters to extend them (e.g. "AaAaAa..." for pages).
+                  Transcribe them as-is or find a single compact equivalent. One line in — one line out.
 
                 ## Interior monologue and ambiguous states — CRITICAL
                 Translate the EXPERIENCE, not the words. When a character's inner state is ambiguous,
@@ -254,7 +273,7 @@ public class TranslationService {
                 ## Characters
                 %s
                 %s
-                Respond ONLY with valid JSON matching the requested format.
+                Output ONLY the translated text. No preamble, no notes, no JSON — just the final literary prose.
                 """.formatted(
                 ctx.sourceLanguage(), ctx.targetLanguage(),
                 buildSceneGuidance(ctx.sceneContext()),
@@ -316,7 +335,7 @@ public class TranslationService {
 
                 Rewrite the faithful draft as literary prose in %s.
                 Let the scene context shape every sentence — wrong texture for the scene is as bad as a wrong word.
-                Provide brief contextNotes on any significant creative choices (restructuring, cultural adaptation, etc.).
+                Output ONLY the translated text. No notes, no commentary.
                 """.formatted(
                 sceneHeader,
                 ctx.sourceLanguage(), ctx.textToTranslate(),
@@ -331,7 +350,7 @@ public class TranslationService {
                 %s
 
                 Translate as a literary co-author. Let scene context shape every prose decision.
-                Provide brief contextNotes on significant creative choices.
+                Output ONLY the translated text. No notes, no commentary.
                 """.formatted(
                 sceneHeader(ctx),
                 ctx.sourceLanguage(), ctx.targetLanguage(), ctx.textToTranslate());

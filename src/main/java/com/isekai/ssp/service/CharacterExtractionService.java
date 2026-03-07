@@ -7,6 +7,7 @@ import com.isekai.ssp.entities.CharacterRelationship;
 import com.isekai.ssp.entities.CharacterState;
 import com.isekai.ssp.entities.RelationshipState;
 import com.isekai.ssp.helpers.CharacterRole;
+import com.isekai.ssp.helpers.EmotionType;
 import com.isekai.ssp.helpers.RelationshipType;
 import com.isekai.ssp.llm.LlmProvider;
 import com.isekai.ssp.llm.LlmProviderRegistry;
@@ -173,6 +174,9 @@ public class CharacterExtractionService {
         state.setArcStage(extracted.arcStage());
         state.setAffiliation(extracted.affiliation());
         state.setLoyalty(extracted.loyalty());
+        state.setDialogueEmotionType(sanitizeEmotionType(extracted.dialogueEmotionType()));
+        state.setDialogueEmotionIntensity(extracted.dialogueEmotionIntensity());
+        state.setDialogueSummary(extracted.dialogueSummary());
         state.setCreatedAt(LocalDateTime.now());
         CharacterState saved = characterStateRepository.save(state);
         embeddingService.embedCharacterState(saved);
@@ -257,6 +261,14 @@ public class CharacterExtractionService {
         catch (Exception e) { return CharacterRole.SUPPORTING; }
     }
 
+    private String sanitizeEmotionType(String type) {
+        try {
+            if (type == null) return null;
+            EmotionType.valueOf(type); // validate against known values
+            return type;
+        } catch (IllegalArgumentException e) { return null; }
+    }
+
     private RelationshipType parseRelationshipType(String type) {
         try { return RelationshipType.valueOf(type); }
         catch (Exception e) { return RelationshipType.NEUTRAL; }
@@ -282,6 +294,7 @@ public class CharacterExtractionService {
             - personalityTraits: Comma-separated personality traits evident from behavior/dialogue
             - role: One of PROTAGONIST, ANTAGONIST, SUPPORTING, MINOR
             - voiceExample: One short, representative line of dialogue showing their register. Null if no dialogue.
+                            If the line is a sound effect or roar, describe it in prose instead of reproducing it verbatim.
             - emotionalState: Their emotional/mental state, e.g. "grief-stricken, resolute"
             - currentGoal: Their primary motivation right now, e.g. "find his missing sister"
             - arcStage: Their narrative arc position, e.g. "reluctant hero", "betrayed mentor", "at lowest point"
@@ -292,6 +305,13 @@ public class CharacterExtractionService {
             - loyalty: Who or what they are loyal to — may differ from affiliation.
                        e.g. "Fiercely loyal to the King", "Secretly working against the guild".
                        Null if not determinable from this chapter.
+            - dialogueEmotionType: Dominant dialogue emotion if they speak — one of NEUTRAL, HAPPY, SAD,
+                                   ANGRY, FEARFUL, URGENT, EXCITED, CONTEMPLATIVE. Null if no dialogue.
+            - dialogueEmotionIntensity: 0.0 (barely perceptible) to 1.0 (overwhelming). Null if no dialogue.
+            - dialogueSummary: Brief summary of what this character says and how they say it.
+                               IMPORTANT: Never reproduce verbatim sound effects, roars, or onomatopoeia —
+                               describe them in prose instead (e.g. "lets out a guttural roar of agony").
+                               Null if no dialogue.
 
             For each RELATIONSHIP between characters in this chapter, determine:
             - character1Name: Name of the first character
